@@ -32,7 +32,7 @@ jobs:
           SYSROOT=$NATIVE/sysroot
           mkdir -p out
           $CXX --target=aarch64-linux-ohos --sysroot=$SYSROOT \
-            -I$CPP -I$SYSROOT/usr/include \
+            -I$CPP -I$CPP/include -I$SYSROOT/usr/include \
             -std=c++17 -fPIC -O2 -shared \
             $CPP/napi_init.cpp $CPP/td_bridge.cpp \
             -L$CPP/prebuilt/arm64-v8a -ltdjson \
