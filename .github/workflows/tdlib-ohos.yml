@@ -68,21 +68,16 @@ jobs:
             -DBUILD_SHARED_LIBS=OFF
           cmake --build build && cmake --install build
 
-      - name: Pre-generate TDLib mime tables (host)
+      - name: Pre-generate TDLib sources (host)
         run: |
-          # TDLib 交叉编译时不会自己生成 auto/*.cpp（两阶段构建官方做法）
+          # TDLib 官方两阶段构建：host 上跑 prepare_cross_compiling 生成全部 auto 文件
+          # (mime 表 + tl schema c++ + json 接口等)
           git clone --depth 1 --branch v1.8.0 https://github.com/tdlib/td.git
           cmake -B td-host-build -S td -DCMAKE_BUILD_TYPE=Release > /dev/null
-          cmake --build td-host-build --target generate_mime_types_gperf -j$(nproc)
-          GEN_DIR=$GITHUB_WORKSPACE/td/tdutils/generate
-          mkdir -p $GEN_DIR/auto
-          host_bin=$(find td-host-build -name generate_mime_types_gperf -type f | head -1)
-          echo "host generator: $host_bin"
-          $host_bin "$GEN_DIR/mime_types.txt" "$GEN_DIR/auto/mime_type_to_extension.gperf" "$GEN_DIR/auto/extension_to_mime_type.gperf"
-          cd "$GEN_DIR"
-          gperf -m100 auto/mime_type_to_extension.gperf | grep -v __gnu_inline__ > auto/mime_type_to_extension.cpp
-          gperf -m100 auto/extension_to_mime_type.gperf > auto/extension_to_mime_type.cpp
-          ls auto/
+          cmake --build td-host-build --target prepare_cross_compiling -j$(nproc)
+          # prepare 会生成 auto 文件并自动移除自身工具，检查产物
+          ls td/td/generate/auto/ | head -5
+          ls td/tdutils/generate/auto/ | head -5
           rm -rf td-host-build
 
       - name: Build TDLib tdjson
