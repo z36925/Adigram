@@ -35,7 +35,7 @@ jobs:
             -I$CPP -I$CPP/include -I$SYSROOT/usr/include \
             -std=c++17 -fPIC -O2 -shared \
             $CPP/napi_init.cpp $CPP/td_bridge.cpp \
-            -L$CPP/prebuilt/arm64-v8a -ltdjson \
+            $CPP/prebuilt/arm64-v8a/libtdjson.so \
             -lace_napi.z -lhilog_ndk.z \
             -o out/libbridge.so
           ls -la out/
