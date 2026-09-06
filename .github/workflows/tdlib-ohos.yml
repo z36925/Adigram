@@ -71,24 +71,23 @@ jobs:
       - name: Pre-generate TDLib mime tables (host)
         run: |
           # TDLib 交叉编译时不会自己生成 auto/*.cpp（两阶段构建官方做法）
-          git clone --depth 1 --branch v1.8.0 https://github.com/tdlib/td.git td-host
-          cmake -B td-host-build -S td-host -DCMAKE_BUILD_TYPE=Release > /dev/null
+          git clone --depth 1 --branch v1.8.0 https://github.com/tdlib/td.git
+          cmake -B td-host-build -S td -DCMAKE_BUILD_TYPE=Release > /dev/null
           cmake --build td-host-build --target generate_mime_types_gperf -j$(nproc)
-          mkdir -p td/tdutils/generate/auto
           GEN_DIR=$GITHUB_WORKSPACE/td/tdutils/generate
-          host_bin=$(find $GITHUB_WORKSPACE/td-host-build -name generate_mime_types_gperf -type f | head -1)
+          mkdir -p $GEN_DIR/auto
+          host_bin=$(find td-host-build -name generate_mime_types_gperf -type f | head -1)
           echo "host generator: $host_bin"
           $host_bin "$GEN_DIR/mime_types.txt" "$GEN_DIR/auto/mime_type_to_extension.gperf" "$GEN_DIR/auto/extension_to_mime_type.gperf"
           cd "$GEN_DIR"
           gperf -m100 auto/mime_type_to_extension.gperf | grep -v __gnu_inline__ > auto/mime_type_to_extension.cpp
           gperf -m100 auto/extension_to_mime_type.gperf > auto/extension_to_mime_type.cpp
-          # 补齐其他 host 预生成文件（tl 解析器等在 git 里已带）
           ls auto/
-          rm -rf $GITHUB_WORKSPACE/td-host $GITHUB_WORKSPACE/td-host-build
+          rm -rf td-host-build
 
       - name: Build TDLib tdjson
         run: |
-          git clone --depth 1 --branch v1.8.0 https://github.com/tdlib/td.git
+          # td 已在预生成步骤 clone，直接用
           # ohos.toolchain.cmake 把 find_package 锁在 sysroot，需扩展 root path 并显式给 OpenSSL 路径
           cmake -B build -G Ninja -S td \
             -DCMAKE_TOOLCHAIN_FILE=$NATIVE/build/cmake/ohos.toolchain.cmake \
