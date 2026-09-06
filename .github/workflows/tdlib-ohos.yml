@@ -24,13 +24,19 @@ jobs:
       - name: Extract native toolchain
         run: |
           mkdir -p /opt/sdk && tar xzf /tmp/sdk.tar.gz -C /opt/sdk
-          # 外层 tar 内是各平台 zip，找 linux 的 native zip
-          LINUX_ZIP=$(find /opt/sdk -name "*linux*native*" -o -name "native*linux*" | grep -i linux | head -1)
+          LINUX_ZIP=$(find /opt/sdk -name "*native*linux*.zip" -o -name "*linux*native*.zip" | head -1)
           echo "native zip: $LINUX_ZIP"
-          unzip -q "$LINUX_ZIP" -d /opt/native
-          NATIVE=$(find /opt/native -maxdepth 3 -type d -name native | head -1)
+          unzip -q "$LINUX_ZIP" -d /opt/nat
+          echo "--- 解压布局 ---"
+          find /opt/nat -maxdepth 3 -type d | head -20
+          # 用 llvm 目录反推 native 根目录（llvm 必存在）
+          LLVM_DIR=$(find /opt/nat -maxdepth 4 -type d -name llvm | head -1)
+          [ -z "$LLVM_DIR" ] && { echo "FATAL: llvm dir not found"; find /opt/nat -maxdepth 4 | head -40; exit 1; }
+          NATIVE=$(dirname "$LLVM_DIR")
           echo "NATIVE=$NATIVE" >> $GITHUB_ENV
-          ls $NATIVE/llvm/bin | grep ohos-clang | head -3
+          echo "NATIVE=$NATIVE"
+          test -x "$NATIVE/llvm/bin/aarch64-unknown-linux-ohos-clang" || { echo "FATAL: clang missing"; exit 1; }
+          test -f "$NATIVE/build/cmake/ohos.toolchain.cmake" && echo "toolchain cmake OK"
 
       - name: Cache deps
         uses: actions/cache@v4
