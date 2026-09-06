@@ -5,102 +5,83 @@ on:
   push:
     paths: [ '.github/workflows/tdlib-ohos.yml' ]
 
+env:
+  SDK_URL: https://repo.huaweicloud.com/openharmony/os/5.0.2-Release/ohos-sdk-windows_linux-public.tar.gz
+
 jobs:
   build:
     runs-on: ubuntu-22.04
-    timeout-minutes: 90
+    timeout-minutes: 120
     steps:
       - name: Install deps
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y gperf cmake ninja-build git python3 wget
+        run: sudo apt-get update && sudo apt-get install -y gperf cmake ninja-build
 
-      - name: Download OHOS SDK Native (Linux)
+      - name: Download OHOS SDK (2.6GB, ~3min)
         run: |
-          wget -q https://repo.huaweicloud.com/openharmony/os/5.0.0-Release/OpenHarmony-5.0.0-Release.tar.gz -O /tmp/oh.tar.gz &
-          # 备用镜像（取小得多的 native-only 包）
-          wget -q https://mirrors.tuna.tsinghua.edu.cn/OpenHarmony/sdk/5.0.0-Release/ohos-sdk-windows_linux-public.tar.gz -O /tmp/sdk.tar.gz || true
-          wait
-          ls -la /tmp/*.tar.gz
+          wget -q --tries=3 "$SDK_URL" -O /tmp/sdk.tar.gz
+          ls -la /tmp/sdk.tar.gz
 
       - name: Extract native toolchain
         run: |
-          if [ -s /tmp/sdk.tar.gz ]; then
-            mkdir -p /opt/sdk && tar xzf /tmp/sdk.tar.gz -C /opt/sdk
-            NATIVE=$(find /opt/sdk -maxdepth 4 -type d -name native | head -1)
-          else
-            mkdir -p /opt/oh && tar xzf /tmp/oh.tar.gz -C /opt/oh
-            NATIVE=$(find /opt/oh -maxdepth 6 -type d -name native | head -1)
-          fi
+          mkdir -p /opt/sdk && tar xzf /tmp/sdk.tar.gz -C /opt/sdk
+          # 外层 tar 内是各平台 zip，找 linux 的 native zip
+          LINUX_ZIP=$(find /opt/sdk -name "*linux*native*" -o -name "native*linux*" | grep -i linux | head -1)
+          echo "native zip: $LINUX_ZIP"
+          unzip -q "$LINUX_ZIP" -d /opt/native
+          NATIVE=$(find /opt/native -maxdepth 3 -type d -name native | head -1)
           echo "NATIVE=$NATIVE" >> $GITHUB_ENV
-          ls $NATIVE/llvm/bin | head
+          ls $NATIVE/llvm/bin | grep ohos-clang | head -3
 
-      - name: Cache OpenSSL + zlib
+      - name: Cache deps
         uses: actions/cache@v4
         with:
           path: opt-deps
-          key: ohos-deps-1
+          key: ohos-deps-v2
 
-      - name: Build OpenSSL 1.1.1w (aarch64 ohos)
+      - name: Build OpenSSL 1.1.1w
         run: |
-          NATIVE=$NATIVE
-          TRIPLET=aarch64-unknown-linux-ohos
+          if [ -f opt-deps/ssl/lib/libssl.a ]; then echo cached; exit 0; fi
           export PATH=$NATIVE/llvm/bin:$PATH
-          CC=$NATIVE/llvm/bin/$TRIPLET-clang
-          mkdir -p opt-deps
-          [ -f opt-deps/ssl/lib/libssl.a ] && { echo cached; exit 0; }
+          CC=$NATIVE/llvm/bin/aarch64-unknown-linux-ohos-clang
           wget -q https://www.openssl.org/source/old/1.1.1/openssl-1.1.1w.tar.gz
-          tar xzf openssl-1.1.1w.tar.gz
-          cd openssl-1.1.1w
-          CC=$CC ./Configure linux-aarch64 shared no-asm no-tests --prefix=$GITHUB_WORKSPACE/opt-deps/ssl --openssldir=$GITHUB_WORKSPACE/opt-deps/ssl/ssl -fPIC
-          make -j$(nproc) SW_BIN=""
+          tar xzf openssl-1.1.1w.tar.gz && cd openssl-1.1.1w
+          CC=$CC ./Configure linux-aarch64 shared no-asm no-tests \
+            --prefix=$GITHUB_WORKSPACE/opt-deps/ssl -fPIC
+          make -j$(nproc)
           make install_sw
 
-      - name: Build zlib 1.3.1 (aarch64 ohos)
+      - name: Build zlib 1.3.1
         run: |
-          NATIVE=$NATIVE
-          TRIPLET=aarch64-unknown-linux-ohos
-          [ -f opt-deps/zlib/lib/libz.a ] && { echo cached; exit 0; }
+          if [ -f opt-deps/zlib/lib/libz.a ]; then echo cached; exit 0; fi
           wget -q https://zlib.net/zlib-1.3.1.tar.gz
           tar xzf zlib-1.3.1.tar.gz && cd zlib-1.3.1
           cmake -B build -G Ninja \
-            -DCMAKE_SYSTEM_NAME=OHOS \
-            -DCMAKE_SYSTEM_PROCESSOR=aarch64 \
-            -DCMAKE_C_COMPILER=$NATIVE/llvm/bin/$TRIPLET-clang \
-            -DCMAKE_SYSROOT=$NATIVE/sysroot \
+            -DCMAKE_TOOLCHAIN_FILE=$NATIVE/build/cmake/ohos.toolchain.cmake \
+            -DOHOS_ARCH=arm64-v8a \
             -DCMAKE_INSTALL_PREFIX=$GITHUB_WORKSPACE/opt-deps/zlib \
             -DBUILD_SHARED_LIBS=OFF
-          cmake --build build
-          cmake --install build
+          cmake --build build && cmake --install build
 
-      - name: Checkout TDLib
+      - name: Build TDLib tdjson
         run: |
           git clone --depth 1 --branch v1.8.0 https://github.com/tdlib/td.git
-
-      - name: Build TDLib tdjson (aarch64 ohos)
-        run: |
-          NATIVE=$NATIVE
-          TRIPLET=aarch64-unknown-linux-ohos
           cmake -B build -G Ninja -S td \
-            -DCMAKE_SYSTEM_NAME=OHOS \
-            -DCMAKE_SYSTEM_PROCESSOR=aarch64 \
-            -DCMAKE_C_COMPILER=$NATIVE/llvm/bin/$TRIPLET-clang \
-            -DCMAKE_CXX_COMPILER=$NATIVE/llvm/bin/$TRIPLET-clang++ \
-            -DCMAKE_SYSROOT=$NATIVE/sysroot \
+            -DCMAKE_TOOLCHAIN_FILE=$NATIVE/build/cmake/ohos.toolchain.cmake \
+            -DOHOS_ARCH=arm64-v8a \
             -DCMAKE_BUILD_TYPE=Release \
             -DOPENSSL_ROOT_DIR=$GITHUB_WORKSPACE/opt-deps/ssl \
             -DZLIB_ROOT=$GITHUB_WORKSPACE/opt-deps/zlib \
             -DTD_ENABLE_JNI=OFF -DTD_ENABLE_DOTNET=OFF
           cmake --build build --target tdjson -j$(nproc)
 
-      - name: Package artifacts
+      - name: Package
         run: |
           mkdir -p stage
           find build -name "libtdjson.so" -exec cp {} stage/ \;
-          find opt-deps -name "libssl*.so*" -o -name "libcrypto*.so*" | xargs -I{} cp {} stage/ 2>/dev/null || true
           cp td/td/telegram/td_json_client.h stage/
           ls -la stage/
           tar czf tdlib-ohos-aarch64.tar.gz -C stage .
+
       - uses: actions/upload-artifact@v4
         with:
           name: tdlib-ohos-aarch64
