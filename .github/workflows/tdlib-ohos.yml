@@ -71,12 +71,18 @@ jobs:
       - name: Build TDLib tdjson
         run: |
           git clone --depth 1 --branch v1.8.0 https://github.com/tdlib/td.git
+          # ohos.toolchain.cmake 把 find_package 锁在 sysroot，需扩展 root path 并显式给 OpenSSL 路径
           cmake -B build -G Ninja -S td \
             -DCMAKE_TOOLCHAIN_FILE=$NATIVE/build/cmake/ohos.toolchain.cmake \
             -DOHOS_ARCH=arm64-v8a \
             -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_FIND_ROOT_PATH="/opt/nat/native/sysroot;$GITHUB_WORKSPACE/opt-deps/ssl;$GITHUB_WORKSPACE/opt-deps/zlib" \
             -DOPENSSL_ROOT_DIR=$GITHUB_WORKSPACE/opt-deps/ssl \
-            -DZLIB_ROOT=$GITHUB_WORKSPACE/opt-deps/zlib \
+            -DOPENSSL_INCLUDE_DIR=$GITHUB_WORKSPACE/opt-deps/ssl/include \
+            -DOPENSSL_CRYPTO_LIBRARY=$GITHUB_WORKSPACE/opt-deps/ssl/lib/libcrypto.so \
+            -DOPENSSL_SSL_LIBRARY=$GITHUB_WORKSPACE/opt-deps/ssl/lib/libssl.so \
+            -DZLIB_INCLUDE_DIR=$NATIVE/sysroot/usr/include \
+            -DZLIB_LIBRARY=$NATIVE/sysroot/usr/lib/aarch64-linux-ohos/libz.so \
             -DTD_ENABLE_JNI=OFF -DTD_ENABLE_DOTNET=OFF
           cmake --build build --target tdjson -j$(nproc)
 
